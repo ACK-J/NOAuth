@@ -1,97 +1,111 @@
 // List of query parameters to identify OAuth requests
 const OAuthParams = [
-  'client_id', 'redirect_uri', 'response_type', 'response_mode', 'scope', 
+  'client_id', 'redirect_uri', 'response_type', 'response_mode', 'scope',
   'state', 'connection'
 ];
 
-// Clear all data in local storage on extension load (first time or refresh)
-async function clearLocalStorage() {
+// Initialize OAuth data globally if needed
+async function initializeGlobalData() {
   try {
-    // Clear all data in local storage
-    await browser.storage.local.clear();
-    console.log('Local storage cleared.');
+    const data = await browser.storage.local.get("oauthData");
+    if (!data.oauthData) {
+      await browser.storage.local.set({
+        oauthData: { endpoints: [], counter: 0 }
+      });
+    }
   } catch (error) {
-    console.error('Error clearing local storage:', error);
+    console.error('Error initializing global OAuth data:', error);
+  }
+}
+
+// Clear all OAuth data
+async function clearOAuthData() {
+  try {
+    await browser.storage.local.set({ oauthData: { endpoints: [], counter: 0 } });
+    const tabs = await browser.tabs.query({});
+    for (const tab of tabs) {
+      browser.browserAction.setBadgeText({ text: "", tabId: tab.id });
+    }
+    updateGlobalBadge();
+  } catch (error) {
+    console.error('Error clearing OAuth data:', error);
+  }
+}
+
+// Helper: unique check
+function arrayToSet(array) {
+  return new Set(array || []);
+}
+
+// Update the global badge (total unique endpoints found)
+async function updateGlobalBadge() {
+  try {
+    const data = await browser.storage.local.get("oauthData");
+    const count = (data.oauthData && data.oauthData.counter) || 0;
+    const text = count > 0 ? count.toString() : "";
+    browser.browserAction.setBadgeBackgroundColor({ color: "#C41E3A" });
+
+    const tabs = await browser.tabs.query({});
+    for (const tab of tabs) {
+      browser.browserAction.setBadgeText({ text, tabId: tab.id });
+    }
+  } catch (error) {
+    console.error('Error updating global badge:', error);
   }
 }
 
 // Listen for web requests
 browser.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    // Get the tab ID of the request
-    const tabId = details.tabId;
+  async (details) => {
+    if (details.tabId === -1) return;
 
-    // Parse the URL of the request
-    const url = new URL(details.url);
+    let url;
+    try {
+      url = new URL(details.url);
+    } catch {
+      return;
+    }
 
-    // Check if the URL has any of the specified OAuth callback parameters
-    const isOAuth = OAuthParams.some(param => url.searchParams.has(param));
+    // **Only** log if redirect_uri is present
+    const isOAuth = url.searchParams.has('redirect_uri');
+    if (!isOAuth) return;
 
-    if (isOAuth) {
-      // Retrieve the current tab data from local storage
-      browser.storage.local.get("tabData").then((data) => {
-        let tabData = data.tabData || {};
+    try {
+      const data = await browser.storage.local.get("oauthData");
+      const oauthData = data.oauthData || { endpoints: [], counter: 0 };
+      const endpointsSet = arrayToSet(oauthData.endpoints);
 
-        // Ensure there is an entry for the tab
-        if (!tabData[tabId]) {
-          tabData[tabId] = {
-            OAuthCounter: 0,
-            OAuthEndpoints: new Set()
-          };
-        }
-
-        // Extract the base URL (excluding query params) for the endpoint
-        const baseUrl = url.origin + url.pathname + url.search;
-
-        // Add the endpoint only if it is unique (Set ensures uniqueness)
-        if (!tabData[tabId].OAuthEndpoints.has(baseUrl)) {
-          tabData[tabId].OAuthEndpoints.add(baseUrl);
-
-          // Increment the counter for OAuth requests on this tab
-          tabData[tabId].OAuthCounter++;
-
-          // Update the badge for the current tab
-          const badgeText = tabData[tabId].OAuthCounter > 0 ? tabData[tabId].OAuthCounter.toString() : "";
-          browser.browserAction.setBadgeBackgroundColor({ color: "#C41E3A" });
-          browser.browserAction.setBadgeText({ text: badgeText, tabId });
-
-          // Store updated tab data in local storage
-          browser.storage.local.set({ tabData });
-        }
-      }).catch((err) => {
-        console.error("Error fetching or setting tab data: ", err);
-      });
+      if (!endpointsSet.has(details.url)) {
+        oauthData.endpoints.push(details.url);
+        oauthData.counter++;
+        await browser.storage.local.set({ oauthData });
+        updateGlobalBadge();
+      }
+    } catch (error) {
+      console.error("Error processing OAuth request:", error);
     }
   },
-  { urls: ["<all_urls>"] }
+  { urls: ["<all_urls>"] },
+  []
 );
 
-// Update the badge when a tab is switched or reloaded
-browser.tabs.onActivated.addListener((activeInfo) => {
-  const tabId = activeInfo.tabId;
-
-  // Retrieve the tab data from local storage and update the badge
-  browser.storage.local.get("tabData").then((data) => {
-    const tabData = data.tabData || {};
-    const badgeText = tabData[tabId] ? tabData[tabId].OAuthCounter.toString() : "";
-    browser.browserAction.setBadgeText({ text: badgeText, tabId });
-  }).catch((err) => {
-    console.error("Error fetching tab data: ", err);
-  });
-});
-
-// Update the badge when the tab is updated (loaded/reloaded)
-browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+// Keep badge up to date
+browser.tabs.onActivated.addListener(updateGlobalBadge);
+browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === 'complete') {
-    // Retrieve the tab data from local storage and update the badge
-    browser.storage.local.get("tabData").then((data) => {
-      const tabData = data.tabData || {};
-      const badgeText = tabData[tabId] ? tabData[tabId].OAuthCounter.toString() : "";
-      browser.browserAction.setBadgeText({ text: badgeText, tabId });
-    }).catch((err) => {
-      console.error("Error fetching tab data: ", err);
-    });
+    updateGlobalBadge();
   }
 });
 
-clearLocalStorage();
+// Handle “Clear” from popup
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === "clearOAuthData") {
+    clearOAuthData()
+      .then(() => sendResponse({ success: true }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+});
+
+initializeGlobalData().then(updateGlobalBadge);
+

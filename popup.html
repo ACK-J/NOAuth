@@ -9,25 +9,27 @@
 <body>
   <header>
     <h1>NOAuth</h1>
-  </header>
 
+    <!-- NEW: controls bar -->
+    <div class="controls">
+      <span id="counter-display">Total OAuth Endpoints Detected: 0</span>
+      <button id="clear-button">Clear</button>
+    </div>
+  </header>
 
   <div id="OAuth-list-container">
     <ul id="OAuth-list">
-      <!-- The list of OAuth endpoints will be populated here -->
+      <!-- Will be populated by popup.js -->
     </ul>
   </div>
 
-  <!-- Footer with credits -->
   <div class="footer">
     <div class="thank-you" id="credits">
-      <a href="https://github.com/ACK-J/NOAuth" target="_blank" style="color: #007bff; text-decoration: none;">GitHub Repo</a>
+      <a href="https://github.com/ACK-J/NOAuth" target="_blank">GitHub Repo</a>
     </div>
   </div>
 
   <script src="popup.js"></script>
-  <div class="containerBHIS">
-    <p class="centered" style="font-size: 12px; margin-top: -19px;"><a target="_blank" href="https://blackhillsinfosec.com"><img src="icons/BHIS.jpg" width="32" height="32" style="margin-top: -4px; margin-right: 3px;"></a><strong style="text-align: center;"><a target="_blank" href="https://blackhillsinfosec.com">Sponsored by Black Hills</br>Information Security</strong><img src="icons/BHIS.jpg" width="32" height="32" style="margin-top: -4px; margin-left: 3px;"></a></p>
-  </div>
 </body>
 </html>
+

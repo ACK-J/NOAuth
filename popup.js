@@ -1,106 +1,109 @@
-// Utility function to encode URL to base64
+// Utility to base64-encode URLs
 function encodeUrlToBase64(url) {
   return btoa(unescape(encodeURIComponent(url)));
 }
 
-// List of query parameters to identify OAuth requests
 const OAuthParams = [
-  'client_id', 'redirect_uri', 'response_type', 'response_mode', 'scope', 
-  'state', 'connection'
+  'client_id', 'redirect_uri', 'response_type', 'response_mode',
+  'scope', 'state', 'connection'
 ];
 
-// Query the active tab in the current window
-browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
-  const tabId = tabs[0].id;
+// Populate the list
+function displayGlobalOAuthEndpoints() {
+  browser.storage.local.get("oauthData")
+    .then((data) => {
+      const listEl = document.getElementById("OAuth-list");
+      listEl.innerHTML = "";
 
-  // Retrieve the tab-specific data from local storage
-  browser.storage.local.get("tabData").then((data) => {
-    const OAuthListElement = document.getElementById("OAuth-list");
-    OAuthListElement.innerHTML = ""; // Clear previous content
+      const { endpoints = [], counter = 0 } = data.oauthData || {};
+      document.getElementById("counter-display").textContent =
+        `Total OAuth Endpoints Detected: ${counter}`;
 
-    // If data exists for the current tab, display the endpoints and query parameters
-    if (data.tabData && data.tabData[tabId]) {
-      const tabOAuthData = data.tabData[tabId];
+      if (endpoints.length === 0) {
+        const empty = document.createElement("li");
+        empty.textContent = "No OAuth flows detected yet.";
+        empty.classList.add('no-flows');
+        listEl.appendChild(empty);
+        return;
+      }
 
-      // Display each unique OAuth endpoint with its query parameters
-      if (tabOAuthData.OAuthEndpoints.size > 0) {
-        tabOAuthData.OAuthEndpoints.forEach((endpoint) => {
-          const url = new URL(endpoint);
+      endpoints.forEach((fullUrl) => {
+        try {
+          const url = new URL(fullUrl);
           const li = document.createElement("li");
-          li.classList.add('endpoint-item');
-          
-          // Add the endpoint text to the card without the "Endpoint:" prefix
-          const endpointText = document.createElement("p");
-          endpointText.textContent = url.origin + url.pathname;
-          li.appendChild(endpointText);
-          
-          // Add query parameters below the endpoint
-          const queryParams = Array.from(url.searchParams.entries());
+          li.className = 'endpoint-item';
 
-          // Filter out only the OAuth-related parameters
-          const OAuthQueryParams = queryParams.filter(([param, value]) => OAuthParams.includes(param));
-          
-          if (OAuthQueryParams.length > 0) {
-            const paramList = document.createElement("ul");
-            OAuthQueryParams.forEach(([param, value]) => {
-              const paramItem = document.createElement("li");
-              paramItem.textContent = `${param}: ${value}`;
+          // URL
+          const p = document.createElement("p");
+          p.className = 'endpoint-url';
+          p.textContent = url.origin + url.pathname;
+          li.appendChild(p);
 
-              // Highlight the OAuth parameter in red
-              paramItem.style.color = 'red';
-              
-              paramList.appendChild(paramItem);
+          // Params
+          const params = Array.from(url.searchParams.entries())
+            .filter(([k]) => OAuthParams.includes(k));
+          if (params.length) {
+            const ul = document.createElement("ul");
+            ul.className = 'param-list';
+            params.forEach(([key, val]) => {
+              const item = document.createElement("li");
+              item.className = 'param-item';
+              item.style.color = 'red';
+              item.textContent = `${key}: ${val}`;
+              ul.appendChild(item);
             });
-
-            li.appendChild(paramList);
+            li.appendChild(ul);
           } else {
-            const noParamsMessage = document.createElement("li");
-            noParamsMessage.textContent = "No OAuth parameters found.";
-            li.appendChild(noParamsMessage);
+            const none = document.createElement("p");
+            none.className = 'no-params';
+            none.textContent = "No OAuth parameters found.";
+            li.appendChild(none);
           }
 
-          // Add the exploit button to each endpoint
-          const exploitButton = document.createElement("button");
-          exploitButton.textContent = "Exploit";
-          exploitButton.style.backgroundColor = "#ff6347"; // Subtle button style
-          exploitButton.style.color = "white";
-          exploitButton.style.border = "none";
-          exploitButton.style.padding = "5px 10px";
-          exploitButton.style.cursor = "pointer";
-          exploitButton.style.fontSize = "12px";
-          exploitButton.style.marginTop = "10px";
-
-          // Handle the exploit button click
-          exploitButton.addEventListener('click', (event) => {
-            event.stopPropagation(); // Prevent opening the endpoint in a new tab
-
-            // Encode the modified URL to base64
-            const base64Url = encodeUrlToBase64(url.href);
-
-            // Open a new tab with the base64-encoded URL
-            const newTab = window.open(`https://noauth.com/?url=${base64Url}`);
+          // Analyze button
+          const btn = document.createElement("button");
+          btn.className = 'analyze-button';
+          btn.textContent = "Analyze Vulnerabilities";
+          btn.addEventListener('click', (evt) => {
+            evt.stopPropagation();
+            const encoded = encodeUrlToBase64(url.href);
+            browser.tabs.create({ url: `https://noauth.com/?url=${encoded}` });
           });
+          li.appendChild(btn);
 
-          li.appendChild(exploitButton);
-
-          OAuthListElement.appendChild(li);
-
-          // Add click event listener to open the endpoint in a new tab
+          // Clicking the card opens the full URL
           li.addEventListener('click', () => {
-            browser.tabs.create({ url: endpoint });  // Open the endpoint URL in a new tab
+            browser.tabs.create({ url: fullUrl });
           });
-        });
-      } else {
-        const li = document.createElement("li");
-        li.textContent = "No OAuth flows found for this tab.";
-        OAuthListElement.appendChild(li);
-      }
-    } else {
-      const li = document.createElement("li");
-      li.textContent = "No OAuth flows found for this tab.";
-      OAuthListElement.appendChild(li);
-    }
-  }).catch((err) => {
-    console.error("Error fetching tab data: ", err);
+
+          listEl.appendChild(li);
+        } catch {
+          const bad = document.createElement("li");
+          bad.textContent = "Invalid OAuth URL encountered";
+          listEl.appendChild(bad);
+        }
+      });
+    })
+    .catch((err) => {
+      console.error("Error loading OAuth data:", err);
+      const listEl = document.getElementById("OAuth-list");
+      listEl.innerHTML = "";
+      const errLi = document.createElement("li");
+      errLi.style.color = "red";
+      errLi.textContent = "Error loading OAuth data. Please try again.";
+      listEl.appendChild(errLi);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Attach clear button listener exactly once
+  document.getElementById("clear-button").addEventListener('click', () => {
+    browser.runtime.sendMessage({ action: "clearOAuthData" })
+      .then(resp => { if (resp.success) displayGlobalOAuthEndpoints(); })
+      .catch(console.error);
   });
+
+  // Initial draw
+  displayGlobalOAuthEndpoints();
 });
+
