@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "NOAuth",
   "description": "Identify OAuth flows and vulnerabilities",
-  "version": "1.0",
+  "version": "1.0.1",
   "permissions": [
     "tabs",
     "webRequest",
@@ -19,11 +19,11 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "{90f1a754-f2a3-4683-a5fd-981ccabc8843}"
+      "id": "{8b94c17c-463f-432b-a401-16a7f1763b21}"
     }
   },
   "icons": {
-    "512": "icons/eye-512.png"
+    "512": "icons/auth-512.png"
 }
 }
 
