@@ -207,6 +207,222 @@ async function checkStateParameter(fullUrl) {
   }
 }
 
+// NEW: Check redirect_uri parameter for open redirect vulnerabilities
+async function checkRedirectUri(fullUrl) {
+  try {
+    const originalUrl = new URL(fullUrl);
+    const redirectUri = originalUrl.searchParams.get('redirect_uri');
+    
+    if (!redirectUri) {
+      const container = document.createElement("div");
+      container.className = "analysis-result redirect-uri-check";
+      container.innerHTML = `<h3>Redirect URI Check</h3>
+        <p><span class='warning'>No redirect_uri parameter found</span></p>`;
+      return container;
+    }
+    
+    // Result container
+    const container = document.createElement("div");
+    container.className = "analysis-result redirect-uri-check";
+    
+    const title = document.createElement("h3");
+    title.textContent = "Redirect URI Check";
+    container.appendChild(title);
+    
+    const description = document.createElement("p");
+    description.innerHTML = "Testing redirect_uri parameter for potential open redirect vulnerabilities.";
+    container.appendChild(description);
+    
+    const loadingText = document.createElement("p");
+    loadingText.innerHTML = "<span class='pending'>⏳ Running tests...</span>";
+    container.appendChild(loadingText);
+    
+    try {
+      // Parse the redirect_uri
+      const redirectUriObj = new URL(redirectUri);
+      const targetDomain = redirectUriObj.hostname;
+      const targetProtocol = redirectUriObj.protocol;
+      const targetPath = redirectUriObj.pathname;
+      
+      // Define test cases
+      const testCases = [
+        {
+          name: "Baseline (Original)",
+          uri: redirectUri,
+          description: "Original redirect_uri without modifications"
+        },
+        {
+          name: "Different Domain",
+          uri: "https://example.com",
+          description: "Complete domain change"
+        },
+        {
+          name: "Subdomain Attack",
+          uri: `https://${targetDomain}.attacker.com`,
+          description: "Attacker domain with target as subdomain"
+        },
+        {
+          name: "Protocol Relative",
+          uri: `//attacker.com${targetPath}`,
+          description: "Protocol-relative URL"
+        },
+        {
+          name: "URL Parsing Trick",
+          uri: `https://attacker.com\\@${targetDomain}${targetPath}`,
+          description: "Backslash and @ symbol trick"
+        },
+        {
+          name: "Parameter Trick",
+          uri: `https://attacker.com?@${targetDomain}${targetPath}`,
+          description: "Parameter and @ symbol trick"
+        },
+        {
+          name: "HTTP Downgrade",
+          uri: redirectUri.replace("https://", "http://"),
+          description: "Downgrade from HTTPS to HTTP"
+        },
+        {
+          name: "CRLF Injection",
+          uri: `https://attacker.com%0d%0a${targetDomain}${targetPath}`,
+          description: "CRLF injection attack"
+        },
+        {
+          name: "Relative Path",
+          uri: `${targetProtocol}//${targetDomain}${targetPath}/../redirect`,
+          description: "Path traversal with ../"
+        },
+        {
+          name: "Query Append",
+          uri: `${redirectUri}?`,
+          description: "Appending a query parameter separator"
+        }
+      ];
+      
+      // Run the tests
+      const results = [];
+      let baselineStatus = null;
+      
+      // Get baseline response
+      for (const testCase of testCases) {
+        // Create a modified URL
+        const testUrl = new URL(fullUrl);
+        testUrl.searchParams.set('redirect_uri', testCase.uri);
+        
+        try {
+          // Send a request
+          const response = await fetch(testUrl.toString(), {
+            method: 'GET',
+            credentials: 'omit',
+            redirect: 'manual'
+          });
+          
+          // Save the result
+          const result = {
+            name: testCase.name,
+            status: response.status,
+            uri: testCase.uri,
+            description: testCase.description,
+            matches: false
+          };
+          
+          // Save baseline status for comparison
+          if (testCase.name === "Baseline (Original)") {
+            baselineStatus = response.status;
+          } else if (baselineStatus !== null) {
+            result.matches = (response.status === baselineStatus);
+          }
+          
+          results.push(result);
+        } catch (error) {
+          results.push({
+            name: testCase.name,
+            status: "Error",
+            uri: testCase.uri,
+            description: testCase.description,
+            error: error.message,
+            matches: false
+          });
+        }
+      }
+      
+      // Create results table
+      const table = document.createElement("table");
+      table.className = "redirect-uri-results";
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      thead.innerHTML = `<tr>
+        <th>Test Case</th>
+        <th>Status</th>
+        <th>Result</th>
+      </tr>`;
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      let vulnerabilitiesFound = false;
+      
+      results.forEach(result => {
+        const row = document.createElement("tr");
+        
+        const testCase = document.createElement("td");
+        testCase.innerHTML = `<strong>${result.name}</strong><br><small>${result.description}</small>`;
+        row.appendChild(testCase);
+        
+        const status = document.createElement("td");
+        status.textContent = result.status;
+        row.appendChild(status);
+        
+        const resultCell = document.createElement("td");
+        if (result.name === "Baseline (Original)") {
+          resultCell.innerHTML = "<span class='info'>Baseline</span>";
+        } else if (result.matches) {
+          resultCell.innerHTML = "<span class='failure'>⚠️ Possible vulnerability</span>";
+          vulnerabilitiesFound = true;
+        } else {
+          resultCell.innerHTML = "<span class='success'>✓ Properly rejected</span>";
+        }
+        row.appendChild(resultCell);
+        
+        tbody.appendChild(row);
+      });
+      
+      table.appendChild(tbody);
+      
+      // Remove loading text
+      container.removeChild(loadingText);
+      
+      // Add summary
+      const summary = document.createElement("p");
+      if (vulnerabilitiesFound) {
+        summary.innerHTML = `<span class='failure'>⚠️ Potential open redirect vulnerabilities detected!</span>
+          <br><br><strong>Vulnerability:</strong> This OAuth implementation may be vulnerable to open redirect attacks.
+          <br><strong>Impact:</strong> Attackers could redirect users to malicious sites after authentication.
+          <br><strong>Recommendation:</strong> Implement strict redirect_uri validation against a whitelist of allowed URIs.`;
+      } else {
+        summary.innerHTML = `<span class='success'>✓ No redirect_uri vulnerabilities detected</span>
+          <br>The server appears to properly validate the redirect_uri parameter.`;
+      }
+      container.appendChild(summary);
+      
+      // Add the results table
+      container.appendChild(table);
+      
+      return container;
+    } catch (error) {
+      loadingText.innerHTML = `<span class='failure'>Error checking redirect_uri: ${error.message}</span>`;
+      return container;
+    }
+  } catch (error) {
+    const container = document.createElement("div");
+    container.className = "analysis-result";
+    container.innerHTML = `<h3>Redirect URI Check</h3>
+      <p><span class='failure'>Error checking redirect_uri parameter: ${error.message}</span></p>`;
+    return container;
+  }
+}
+
 // Toggle analysis results visibility
 function toggleAnalysisResults(parentElement, button) {
   const resultsContainer = parentElement.querySelector('.analysis-results');
@@ -294,7 +510,11 @@ function displayGlobalOAuthEndpoints() {
             resultsContainer = document.createElement("div");
             resultsContainer.className = "analysis-results";
             
-            // Check for state parameter first (NEW)
+            // NEW: Check for redirect_uri vulnerabilities
+            const redirectUriResultElement = await checkRedirectUri(fullUrl);
+            resultsContainer.appendChild(redirectUriResultElement);
+            
+            // Check for state parameter
             const stateResultElement = await checkStateParameter(fullUrl);
             resultsContainer.appendChild(stateResultElement);
             
