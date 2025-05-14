@@ -169,10 +169,17 @@ header h1 {
   cursor: not-allowed;
 }
 
-.config-link, .endpoint-link {
+.config-link {
   color: #007bff;
   display: block;
   margin: 5px 0;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.endpoint-link {
+  color: #007bff;
+  display: inline;
   font-size: 12px;
 }
 
@@ -205,6 +212,9 @@ header h1 {
 .key-endpoints li {
   margin-bottom: 5px;
   word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .no-flows {

@@ -59,15 +59,13 @@ function createOpenIDResultElement(result) {
     const configLink = document.createElement("a");
     configLink.className = "config-link";
     configLink.href = result.url; // We'll pass this in the result object
-    configLink.textContent = "View raw configuration";
+    configLink.textContent = result.url;
     configLink.target = "_blank"; // Open in new tab
     configLink.addEventListener('click', (evt) => {
       evt.stopPropagation(); // Prevent the card click from triggering
     });
     container.appendChild(configLink);
-    
-    // Line break after the link
-    container.appendChild(document.createElement("br"));
+   
     
     // Add configuration details
     const configDetails = document.createElement("div");
@@ -108,8 +106,8 @@ function createOpenIDResultElement(result) {
     importantKeys.forEach(key => {
       if (result.data[key]) {
         const item = document.createElement("li");
-        // Make each endpoint a clickable link
-        item.innerHTML = `<strong>${key}:</strong> <a href="${result.data[key]}" target="_blank" class="endpoint-link">${result.data[key]}</a>`;
+        // Make each endpoint a clickable link on the same line (no bold)
+        item.innerHTML = `${key}: <a href="${result.data[key]}" target="_blank" class="endpoint-link">${result.data[key]}</a>`;
         item.querySelector('a').addEventListener('click', (evt) => {
           evt.stopPropagation(); // Prevent the card click from triggering
         });
@@ -190,7 +188,7 @@ async function checkStateParameter(fullUrl) {
           <br><strong>Recommendation:</strong> Ensure the state parameter is properly validated server-side.`;
       } else {
         resultText.innerHTML = `<span class='success'>✓ State Parameter Appears to be Validated</span>
-          <br><br>The server rejected the request with an invalid state parameter (Status: ${response.status}).
+          <br><br>The server rejected the request with an invalid state parameter.
           <br>This suggests proper CSRF protection is in place.`;
       }
     } catch (error) {
