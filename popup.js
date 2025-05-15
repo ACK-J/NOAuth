@@ -8,6 +8,190 @@ const OAuthParams = [
   'scope', 'state', 'connection'
 ];
 
+// Function to check interesting OAuth parameters
+async function checkInterestingParameters(fullUrl) {
+  try {
+    const originalUrl = new URL(fullUrl);
+    
+    // Result container
+    const container = document.createElement("div");
+    container.className = "analysis-result parameter-check";
+    
+    const title = document.createElement("h3");
+    title.textContent = "Interesting Parameter Check";
+    container.appendChild(title);
+    
+    const loadingText = document.createElement("p");
+    loadingText.innerHTML = "<span class='pending'>⏳ Running tests...</span>";
+    container.appendChild(loadingText);
+    
+    try {
+      // Define test cases
+      const testCases = [
+        {
+          name: "Baseline (Original)",
+          params: {},
+          description: "Original request without modifications"
+        },
+        {
+          name: "response_type=web_message",
+          params: { response_type: "web_message" },
+          description: "Test web_message response type"
+        },
+        {
+          name: "response_mode=fragment",
+          params: { response_mode: "fragment" },
+          description: "Test fragment response mode"
+        },
+        {
+          name: "response_mode=form_post",
+          params: { response_mode: "form_post" },
+          description: "Test form_post response mode"
+        },
+        {
+          name: "prompt=consent",
+          params: { prompt: "consent" },
+          description: "Test explicit consent prompt"
+        },
+        {
+          name: "prompt=none",
+          params: { prompt: "none" },
+          description: "Test silent authentication"
+        }
+      ];
+      
+      // Run the tests
+      const results = [];
+      let baselineStatus = null;
+      
+      for (const testCase of testCases) {
+        // Create a modified URL
+        const testUrl = new URL(fullUrl);
+        
+        // Apply parameter changes
+        for (const [key, value] of Object.entries(testCase.params)) {
+          testUrl.searchParams.set(key, value);
+        }
+        
+        try {
+          // Send a request
+          const response = await fetch(testUrl.toString(), {
+            method: 'GET',
+            credentials: 'omit',
+            redirect: 'manual'
+          });
+          let response_status = null;
+          
+          if (response.status === 0) {
+            response_status = "3XX"; // Browsers hide redirect responses with "opaqueresponse"
+          } else {
+            response_status = response.status;
+          }
+          
+          // Save the result
+          const result = {
+            name: testCase.name,
+            status: response_status,
+            description: testCase.description,
+            matches: false
+          };
+
+          
+          // Save baseline status for comparison
+          if (testCase.name === "Baseline (Original)") {
+            baselineStatus = response_status;
+          } else if (baselineStatus !== null) {
+            result.matches = (response_status === baselineStatus);
+          }
+          
+          results.push(result);
+        } catch (error) {
+          results.push({
+            name: testCase.name,
+            status: "Error",
+            description: testCase.description,
+            error: error.message,
+            matches: false
+          });
+        }
+      }
+      
+      // Create results table
+      const table = document.createElement("table");
+      table.className = "redirect-uri-results";
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      thead.innerHTML = `<tr>
+        <th>Test Case</th>
+        <th>Status</th>
+        <th>Result</th>
+      </tr>`;
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      let interestingParametersFound = false;
+      
+      results.forEach(result => {
+        const row = document.createElement("tr");
+        
+        const testCase = document.createElement("td");
+        testCase.innerHTML = `<strong>${result.name}</strong><br><small>${result.description}</small>`;
+        row.appendChild(testCase);
+        
+        const status = document.createElement("td");
+        status.textContent = result.status;
+        row.appendChild(status);
+        
+        const resultCell = document.createElement("td");
+        if (result.name === "Baseline (Original)") {
+          resultCell.innerHTML = "<span class='info'>Baseline</span>";
+        } else if (result.matches) {
+          resultCell.innerHTML = "<span class='success'>✓ Parameter accepted</span>";
+          interestingParametersFound = true;
+        } else {
+          resultCell.innerHTML = "<span class='warning'>Parameter rejected</span>";
+        }
+        row.appendChild(resultCell);
+        
+        tbody.appendChild(row);
+      });
+      
+      table.appendChild(tbody);
+      
+      // Remove loading text
+      container.removeChild(loadingText);
+      
+      // Add summary
+      const summary = document.createElement("p");
+      if (interestingParametersFound) {
+        summary.innerHTML = `<strong>Note:</strong> The acceptance of these parameters may indicate additional OAuth capabilities.
+          <br><strong>Impact:</strong> Parameters like 'prompt=none' might be used for silent authentication, while 'response_mode=web_message' submits the code via postmessage.`;
+      } else {
+        summary.innerHTML = `<span class='info'>No interesting parameters were accepted</span>
+          <br>The server appears to reject all modified parameters.`;
+      }
+      container.appendChild(summary);
+      
+      // Add the results table
+      container.appendChild(table);
+      
+      return container;
+    } catch (error) {
+      loadingText.innerHTML = `<span class='failure'>Error checking parameters: ${error.message}</span>`;
+      return container;
+    }
+  } catch (error) {
+    const container = document.createElement("div");
+    container.className = "analysis-result";
+    container.innerHTML = `<h3>Interesting Parameter Check</h3>
+      <p><span class='failure'>Error checking parameters: ${error.message}</span></p>`;
+    return container;
+  }
+}
+
 // Check for OpenID configuration
 async function checkOpenIDConfiguration(domain) {
   const configUrl = `${domain}/.well-known/openid-configuration`;
@@ -230,7 +414,7 @@ async function checkRedirectUri(fullUrl) {
     container.appendChild(title);
     
     const description = document.createElement("p");
-    description.innerHTML = "Testing redirect_uri parameter for potential open redirect vulnerabilities.";
+    description.innerHTML = "Testing the <strong>redirect_uri</strong> parameter for potential open redirect vulnerabilities.";
     container.appendChild(description);
     
     const loadingText = document.createElement("p");
@@ -244,6 +428,15 @@ async function checkRedirectUri(fullUrl) {
       const targetProtocol = redirectUriObj.protocol;
       const targetPath = redirectUriObj.pathname;
       
+      // Find the positions of all dots in the hostname part
+      const parts = redirectUri.split('.');
+      if (parts.length >= 3) {
+        // Replace the second-to-last dot (second from the right)
+        parts[parts.length - 3] = parts[parts.length - 3] + 'X' + parts[parts.length - 2];
+        parts.splice(parts.length - 2, 1); // Remove the now-merged next part
+      }
+      const modifiedUrl = parts.join('.'); //https://www.oauth.target.com/auth? -> https://www.oauthXtarget.com/auth?
+      
       // Define test cases
       const testCases = [
         {
@@ -254,27 +447,27 @@ async function checkRedirectUri(fullUrl) {
         {
           name: "Different Domain",
           uri: "https://example.com",
-          description: "Complete domain change"
+          description: "https://example.com"
         },
         {
           name: "Subdomain Attack",
           uri: `https://${targetDomain}.attacker.com`,
-          description: "Attacker domain with target as subdomain"
+          description: "Target subdomain target.com.attacker.com"
         },
         {
           name: "Protocol Relative",
           uri: `//attacker.com${targetPath}`,
-          description: "Protocol-relative URL"
+          description: "Protocol-relative URL //attacker.com"
         },
         {
           name: "URL Parsing Trick",
           uri: `https://attacker.com\\@${targetDomain}${targetPath}`,
-          description: "Backslash and @ symbol trick"
+          description: "\\@ symbol trick"
         },
         {
           name: "Parameter Trick",
           uri: `https://attacker.com?@${targetDomain}${targetPath}`,
-          description: "Parameter and @ symbol trick"
+          description: "?@ symbol trick"
         },
         {
           name: "HTTP Downgrade",
@@ -295,7 +488,12 @@ async function checkRedirectUri(fullUrl) {
           name: "Query Append",
           uri: `${redirectUri}?`,
           description: "Appending a query parameter separator"
-        }
+        },
+	{
+	  name: "Check Regex Dot Escaping",
+	  uri: `${modifiedUrl}`,
+	  description: "Replaces second '.' with 'X'"
+	}
       ];
       
       // Run the tests
@@ -315,11 +513,17 @@ async function checkRedirectUri(fullUrl) {
             credentials: 'omit',
             redirect: 'manual'
           });
+          let response_status = null;
           
+          if (response.status === 0) {
+            response_status = "3XX"; // Browsers hide redirect responses with "opaqueresponse"
+          } else {
+            response_status = response.status;
+          }
           // Save the result
           const result = {
             name: testCase.name,
-            status: response.status,
+            status: response_status,
             uri: testCase.uri,
             description: testCase.description,
             matches: false
@@ -327,9 +531,9 @@ async function checkRedirectUri(fullUrl) {
           
           // Save baseline status for comparison
           if (testCase.name === "Baseline (Original)") {
-            baselineStatus = response.status;
+            baselineStatus = response_status;
           } else if (baselineStatus !== null) {
-            result.matches = (response.status === baselineStatus);
+            result.matches = (response_status === baselineStatus);
           }
           
           results.push(result);
@@ -442,8 +646,6 @@ function displayGlobalOAuthEndpoints() {
       listEl.innerHTML = "";
 
       const { endpoints = [], counter = 0 } = data.oauthData || {};
-      document.getElementById("counter-display").textContent =
-        `Total OAuth Endpoints Detected: ${counter}`;
 
       if (endpoints.length === 0) {
         const empty = document.createElement("li");
@@ -466,16 +668,17 @@ function displayGlobalOAuthEndpoints() {
           li.appendChild(p);
 
           // Params
-          const params = Array.from(url.searchParams.entries())
-            .filter(([k]) => OAuthParams.includes(k));
+          //const params = Array.from(url.searchParams.entries()).filter(([k]) => OAuthParams.includes(k)); Filter only certain queries
+          const params = Array.from(url.searchParams.entries());
+
           if (params.length) {
             const ul = document.createElement("ul");
             ul.className = 'param-list';
             params.forEach(([key, val]) => {
               const item = document.createElement("li");
               item.className = 'param-item';
-              item.style.color = 'red';
-              item.textContent = `${key}: ${val}`;
+              item.style.color = 'black';
+              item.innerHTML = `<strong>${key}:</strong> <span style="color: #c41e3a;">${val}</span>`;
               ul.appendChild(item);
             });
             li.appendChild(ul);
@@ -510,7 +713,11 @@ function displayGlobalOAuthEndpoints() {
             resultsContainer = document.createElement("div");
             resultsContainer.className = "analysis-results";
             
-            // NEW: Check for redirect_uri vulnerabilities
+            // Check for interesting parameters
+            const parameterResultElement = await checkInterestingParameters(fullUrl);
+            resultsContainer.appendChild(parameterResultElement);
+            
+            // Check for redirect_uri vulnerabilities
             const redirectUriResultElement = await checkRedirectUri(fullUrl);
             resultsContainer.appendChild(redirectUriResultElement);
             

@@ -148,6 +148,43 @@ header h1 {
   border-left: 4px solid #17a2b8;
 }
 
+/* Redirect URI check specific styles */
+.redirect-uri-check {
+  border-left: 4px solid #17a2b8;
+}
+
+/* Parameter check specific styles */
+.parameter-check {
+  border-left: 4px solid #17a2b8;
+}
+
+.parameter-results {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.parameter-results th, .parameter-results td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+.parameter-results th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+.parameter-results tr:hover {
+  background-color: #f9f9f9;
+}
+
+.info {
+  color: #17a2b8;
+  font-weight: bold;
+}
+
 .toggle-button, .analyze-button {
   background-color: #007bff;
   color: white;
