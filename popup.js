@@ -3,6 +3,7 @@ function encodeUrlToBase64(url) {
   return btoa(unescape(encodeURIComponent(url)));
 }
 
+// List of query parameters to identify OAuth requests
 const OAuthParams = [
   'client_id', 'redirect_uri', 'response_type', 'response_mode',
   'scope', 'state', 'connection'
@@ -34,9 +35,14 @@ async function checkInterestingParameters(fullUrl) {
           description: "Original request without modifications"
         },
         {
-          name: "response_type=web_message",
-          params: { response_type: "web_message" },
-          description: "Test web_message response type"
+          name: "response_mode=query",
+          params: { response_mode: "query" },
+          description: "Test query response mode"
+        },
+        {
+          name: "response_mode=web_message",
+          params: { response_mode: "web_message" },
+          description: "Test web_message response mode"
         },
         {
           name: "response_mode=fragment",
@@ -57,6 +63,21 @@ async function checkInterestingParameters(fullUrl) {
           name: "prompt=none",
           params: { prompt: "none" },
           description: "Test silent authentication"
+        },
+        {
+          name: "response_type=code",
+          params: { response_type: "code" },
+          description: "Test code response type"
+        },
+        {
+          name: "response_type=token",
+          params: { response_type: "token" },
+          description: "Test token response type"
+        },
+        {
+          name: "response_type=code+id_token",
+          params: { response_type: "code+id_token" },
+          description: "Test code+id_token response type"
         }
       ];
       
@@ -307,7 +328,111 @@ function createOpenIDResultElement(result) {
     }
     
   } else {
-    resultText.innerHTML = "<span class='failure'>✗ No OpenID Configuration Found</span>";
+    resultText.innerHTML = "<span class='info'>✗ No OpenID Configuration Found</span>";
+    
+    if (result.status) {
+      resultText.innerHTML += `<br>Status: ${result.status}`;
+    }
+    
+    if (result.error) {
+      resultText.innerHTML += `<br>Error: ${result.error}`;
+    }
+    
+    container.appendChild(resultText);
+  }
+  
+  return container;
+}
+
+// NEW: Check for WebFinger configuration
+async function checkWebFinger(domain) {
+  const webFingerUrl = `${domain}/.well-known/webfinger?resource=acct:admin`;
+  try {
+    const response = await fetch(webFingerUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+      }
+    });
+    
+    if (response.ok) {
+      return {
+        exists: true,
+        data: await response.json(),
+        url: webFingerUrl
+      };
+    } else {
+      return {
+        exists: false,
+        status: response.status,
+        url: webFingerUrl
+      };
+    }
+  } catch (error) {
+    return {
+      exists: false,
+      error: error.message,
+      url: webFingerUrl
+    };
+  }
+}
+
+// NEW: Create result element for WebFinger configuration
+function createWebFingerResultElement(result) {
+  const container = document.createElement("div");
+  container.className = "analysis-result webfinger-check";
+  
+  const title = document.createElement("h3");
+  title.textContent = "WebFinger Check";
+  container.appendChild(title);
+  
+  const resultText = document.createElement("p");
+  if (result.exists) {
+    resultText.innerHTML = "<span class='success'>✓ Discovered WebFinger Configuration</span>";
+    container.appendChild(resultText);
+    
+    // Add clickable link to the WebFinger endpoint
+    const configLink = document.createElement("a");
+    configLink.className = "config-link";
+    configLink.href = result.url;
+    configLink.textContent = result.url;
+    configLink.target = "_blank";
+    configLink.addEventListener('click', (evt) => {
+      evt.stopPropagation();
+    });
+    container.appendChild(configLink);
+    
+    // Add configuration details
+    const configDetails = document.createElement("div");
+    configDetails.className = "config-details";
+    
+    const toggleButton = document.createElement("button");
+    toggleButton.className = "toggle-button";
+    toggleButton.textContent = "Show Details";
+    toggleButton.addEventListener('click', () => {
+      const isVisible = configDetails.style.display !== "none";
+      configDetails.style.display = isVisible ? "none" : "block";
+      toggleButton.textContent = isVisible ? "Show Details" : "Hide Details";
+    });
+    container.appendChild(toggleButton);
+    
+    // Pre-formatted JSON container
+    const jsonContainer = document.createElement("pre");
+    jsonContainer.className = "json-container";
+    jsonContainer.textContent = JSON.stringify(result.data, null, 2);
+    configDetails.appendChild(jsonContainer);
+    
+    // Initially hide the details
+    configDetails.style.display = "none";
+    container.appendChild(configDetails);
+    
+    // Add security note about WebFinger data exposure
+    const securityNote = document.createElement("p");
+    securityNote.innerHTML = "<span class='warning'>⚠️ Security Note:</span> WebFinger can expose user information and account linkages, which may lead to <a href='https://datatracker.ietf.org/doc/html/draft-ietf-appsawg-webfinger#page-9'>user enumeration vulnerabilities</a>.";
+    container.appendChild(securityNote);
+    
+  } else {
+    resultText.innerHTML = "<span class='info'>✗ No WebFinger Configuration Found</span>";
     
     if (result.status) {
       resultText.innerHTML += `<br>Status: ${result.status}`;
@@ -729,6 +854,11 @@ function displayGlobalOAuthEndpoints() {
             const openIDResult = await checkOpenIDConfiguration(url.origin);
             const openIDResultElement = createOpenIDResultElement(openIDResult);
             resultsContainer.appendChild(openIDResultElement);
+            
+            // NEW: Check for WebFinger configuration
+            const webFingerResult = await checkWebFinger(url.origin);
+            const webFingerResultElement = createWebFingerResultElement(webFingerResult);
+            resultsContainer.appendChild(webFingerResultElement);
             
             // Append results to card
             li.appendChild(resultsContainer);

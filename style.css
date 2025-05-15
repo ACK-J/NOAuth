@@ -158,6 +158,11 @@ header h1 {
   border-left: 4px solid #17a2b8;
 }
 
+/* WebFinger check specific styles */
+.webfinger-check {
+  border-left: 4px solid #17a2b8;
+}
+
 .parameter-results {
   width: 100%;
   border-collapse: collapse;
