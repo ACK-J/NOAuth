@@ -98,7 +98,7 @@ async function checkInterestingParameters(fullUrl) {
           // Send a request
           const response = await fetch(testUrl.toString(), {
             method: 'GET',
-            credentials: 'omit',
+            credentials: 'include',
             redirect: 'manual'
           });
           let response_status = null;
@@ -189,7 +189,7 @@ async function checkInterestingParameters(fullUrl) {
       const summary = document.createElement("p");
       if (interestingParametersFound) {
         summary.innerHTML = `<strong>Note:</strong> The acceptance of these parameters may indicate additional OAuth capabilities.
-          <br><strong>Impact:</strong> Parameters like 'prompt=none' might be used for silent authentication, while 'response_mode=web_message' submits the code via postmessage.`;
+          <br><strong>Impact:</strong> Parameters like <strong>prompt=none</strong> might be used for silent authentication, while <strong>response_mode=web_message</strong> submits the code via postmessage.`;
       } else {
         summary.innerHTML = `<span class='info'>No interesting parameters were accepted</span>
           <br>The server appears to reject all modified parameters.`;
@@ -448,11 +448,10 @@ function createWebFingerResultElement(result) {
   return container;
 }
 
-// NEW: Check state parameter presence and validation
 async function checkStateParameter(fullUrl) {
   try {
-    const url = new URL(fullUrl);
-    const stateParam = url.searchParams.get('state');
+    const originalUrl = new URL(fullUrl);
+    const stateParam = originalUrl.searchParams.get('state');
     
     // Result container
     const container = document.createElement("div");
@@ -462,10 +461,9 @@ async function checkStateParameter(fullUrl) {
     title.textContent = "State Parameter Check";
     container.appendChild(title);
     
-    const resultText = document.createElement("p");
-    
     // Check if state parameter exists
     if (!stateParam) {
+      const resultText = document.createElement("p");
       resultText.innerHTML = `<span class='failure'>⚠️ No State Parameter Found</span>
         <br><br><strong>Vulnerability:</strong> This OAuth flow may be vulnerable to Cross-Site Request Forgery (CSRF).
         <br><strong>Impact:</strong> Attackers could perform forced OAuth profile linking or potentially exploit self-XSS vulnerabilities.
@@ -474,39 +472,178 @@ async function checkStateParameter(fullUrl) {
       return container;
     }
     
-    // Create a modified URL with state parameter removed
-    const modifiedUrl = new URL(fullUrl);
-    modifiedUrl.searchParams.delete('state'); // Remove state parameter
+    const description = document.createElement("p");
+    description.innerHTML = "Testing the <strong>state</strong> parameter validation for potential CSRF vulnerabilities.";
+    container.appendChild(description);
     
-    resultText.innerHTML = `<span class='pending'>⏳ Testing state parameter validation...</span>`;
-    container.appendChild(resultText);
+    const loadingText = document.createElement("p");
+    loadingText.innerHTML = "<span class='pending'>⏳ Running tests...</span>";
+    container.appendChild(loadingText);
     
     try {
-      // Send a request with state parameter removed
-      const response = await fetch(modifiedUrl.toString(), {
-        method: 'GET',
-        credentials: 'omit', // Don't send cookies
-        redirect: 'manual' // Don't follow redirects
+      // Create modified state value (change last character)
+      let modifiedStateValue = stateParam;
+      if (modifiedStateValue.length > 0) {
+        const lastChar = modifiedStateValue.charAt(modifiedStateValue.length - 1);
+        // Change the last character (increment if a number, otherwise append 'X')
+        if (!isNaN(parseInt(lastChar))) {
+          const newLastChar = (parseInt(lastChar) + 1) % 10;
+          modifiedStateValue = modifiedStateValue.substring(0, modifiedStateValue.length - 1) + newLastChar;
+        } else {
+          modifiedStateValue = modifiedStateValue + 'X';
+        }
+      }
+      
+      // Define test cases
+      const testCases = [
+        {
+          name: "Baseline (Original)",
+          params: { state: stateParam },
+          description: "Original state parameter without modifications"
+        },
+        {
+          name: "Modified State Value",
+          params: { state: modifiedStateValue },
+          description: "State parameter with last character modified"
+        },
+        {
+          name: "Empty State Value",
+          params: { state: "" },
+          description: "State parameter with empty value"
+        },
+        {
+          name: "No State Parameter",
+          params: { noState: true },
+          description: "Request with state parameter removed entirely"
+        }
+      ];
+      
+      // Run the tests
+      const results = [];
+      let baselineStatus = null;
+      
+      for (const testCase of testCases) {
+        // Create a modified URL
+        const testUrl = new URL(fullUrl);
+        
+        if (testCase.params.noState) {
+          testUrl.searchParams.delete('state');
+        } else {
+          testUrl.searchParams.set('state', testCase.params.state);
+        }
+        
+        try {
+          // Send a request
+          const response = await fetch(testUrl.toString(), {
+            method: 'GET',
+            credentials: 'omit',
+            redirect: 'manual'
+          });
+          
+          let response_status = null;
+          
+          if (response.status === 0) {
+            response_status = "3XX"; // Browsers hide redirect responses with "opaqueresponse"
+          } else {
+            response_status = response.status;
+          }
+          
+          // Save the result
+          const result = {
+            name: testCase.name,
+            status: response_status,
+            description: testCase.description,
+            matches: false
+          };
+          
+          // Save baseline status for comparison
+          if (testCase.name === "Baseline (Original)") {
+            baselineStatus = response_status;
+          } else if (baselineStatus !== null) {
+            result.matches = (response_status === baselineStatus);
+          }
+          
+          results.push(result);
+        } catch (error) {
+          results.push({
+            name: testCase.name,
+            status: "Error",
+            description: testCase.description,
+            error: error.message,
+            matches: false
+          });
+        }
+      }
+      
+      // Create results table
+      const table = document.createElement("table");
+      table.className = "redirect-uri-results";
+      
+      // Create table header
+      const thead = document.createElement("thead");
+      thead.innerHTML = `<tr>
+        <th>Test Case</th>
+        <th>Status</th>
+        <th>Result</th>
+      </tr>`;
+      table.appendChild(thead);
+      
+      // Create table body
+      const tbody = document.createElement("tbody");
+      
+      let vulnerabilityFound = false;
+      
+      results.forEach(result => {
+        const row = document.createElement("tr");
+        
+        const testCase = document.createElement("td");
+        testCase.innerHTML = `<strong>${result.name}</strong><br><small>${result.description}</small>`;
+        row.appendChild(testCase);
+        
+        const status = document.createElement("td");
+        status.textContent = result.status;
+        row.appendChild(status);
+        
+        const resultCell = document.createElement("td");
+        if (result.name === "Baseline (Original)") {
+          resultCell.innerHTML = "<span class='info'>Baseline</span>";
+        } else if (result.matches) {
+          resultCell.innerHTML = "<span class='failure'>⚠️ Possible vulnerability</span>";
+          vulnerabilityFound = true;
+        } else {
+          resultCell.innerHTML = "<span class='success'>✓ Properly validated</span>";
+        }
+        row.appendChild(resultCell);
+        
+        tbody.appendChild(row);
       });
       
-      // Check the response
-      if (response.status === 200) {
-        resultText.innerHTML = `<span class='failure'>⚠️ State Parameter May Not Be Validated</span>
-          <br><br><strong>Vulnerability:</strong> The server accepted a request without the state parameter.
-          <br><strong>Impact:</strong> This OAuth flow may be vulnerable to CSRF attacks.
-          <br><strong>Recommendation:</strong> Ensure the state parameter is properly validated server-side.`;
+      table.appendChild(tbody);
+      
+      // Remove loading text
+      container.removeChild(loadingText);
+      
+      // Add summary
+      const summary = document.createElement("p");
+      if (vulnerabilityFound) {
+        summary.innerHTML = `<span class='failure'>⚠️ State parameter validation issues detected!</span>
+          <br><br><strong>Vulnerability:</strong> This OAuth implementation may be vulnerable to CSRF attacks.
+          <br><strong>Impact:</strong> Attackers could potentially forge requests that bypass state validation.
+          <br><strong>Recommendation:</strong> Ensure the state parameter is properly validated server-side and has proper entropy.`;
       } else {
-        resultText.innerHTML = `<span class='success'>✓ State Parameter Appears to be Validated</span>
-          <br><br>The server rejected the request with an invalid state parameter.
-          <br>This suggests proper CSRF protection is in place.`;
+        summary.innerHTML = `<span class='success'>✓ State parameter appears to be validated</span>
+          <br>The server appears to properly validate the state parameter, providing CSRF protection.`;
       }
+      container.appendChild(summary);
+      
+      // Add the results table
+      container.appendChild(table);
+      
+      return container;
     } catch (error) {
-      resultText.innerHTML = `<span class='warning'>⚠️ Could not verify state parameter validation</span>
-        <br><br>Error: ${error.message}
-        <br><strong>Recommendation:</strong> Manually verify that the state parameter is validated server-side.`;
+      loadingText.innerHTML = `<span class='failure'>Error checking state parameter: ${error.message}</span>`;
+      return container;
     }
-    
-    return container;
   } catch (error) {
     const container = document.createElement("div");
     container.className = "analysis-result";
@@ -635,7 +772,7 @@ async function checkRedirectUri(fullUrl) {
           // Send a request
           const response = await fetch(testUrl.toString(), {
             method: 'GET',
-            credentials: 'omit',
+            credentials: 'include',
             redirect: 'manual'
           });
           let response_status = null;
@@ -727,7 +864,7 @@ async function checkRedirectUri(fullUrl) {
       if (vulnerabilitiesFound) {
         summary.innerHTML = `<span class='failure'>⚠️ Potential open redirect vulnerabilities detected!</span>
           <br><br><strong>Vulnerability:</strong> This OAuth implementation may be vulnerable to open redirect attacks.
-          <br><strong>Impact:</strong> Attackers could redirect users to malicious sites after authentication.
+          <br><strong>Impact:</strong> Attackers could redirect users to malicious sites and potentially steal authentication codes/tokens.
           <br><strong>Recommendation:</strong> Implement strict redirect_uri validation against a whitelist of allowed URIs.`;
       } else {
         summary.innerHTML = `<span class='success'>✓ No redirect_uri vulnerabilities detected</span>
