@@ -107,5 +107,21 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+function onCreated(windowInfo) {
+  browser.windows.update(windowInfo.id, {
+    height: 700,
+    width: 850,
+  });
+}
+
+browser.browserAction.onClicked.addListener(async function() {
+  let pane = browser.windows.create({
+    url: "popup.html",
+    type: "popup",
+  });
+  pane.then(onCreated);
+});
+
 initializeGlobalData().then(updateGlobalBadge);
+
 

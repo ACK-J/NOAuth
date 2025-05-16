@@ -344,7 +344,7 @@ function createOpenIDResultElement(result) {
   return container;
 }
 
-// NEW: Check for WebFinger configuration
+// Check for WebFinger configuration
 async function checkWebFinger(domain) {
   const webFingerUrl = `${domain}/.well-known/webfinger?resource=acct:admin`;
   try {
@@ -377,7 +377,7 @@ async function checkWebFinger(domain) {
   }
 }
 
-// NEW: Create result element for WebFinger configuration
+//  Create result element for WebFinger configuration
 function createWebFingerResultElement(result) {
   const container = document.createElement("div");
   container.className = "analysis-result webfinger-check";
@@ -653,7 +653,7 @@ async function checkStateParameter(fullUrl) {
   }
 }
 
-// NEW: Check redirect_uri parameter for open redirect vulnerabilities
+//  Check redirect_uri parameter for open redirect vulnerabilities
 async function checkRedirectUri(fullUrl) {
   try {
     const originalUrl = new URL(fullUrl);
@@ -992,7 +992,7 @@ function displayGlobalOAuthEndpoints() {
             const openIDResultElement = createOpenIDResultElement(openIDResult);
             resultsContainer.appendChild(openIDResultElement);
             
-            // NEW: Check for WebFinger configuration
+            // Check for WebFinger configuration
             const webFingerResult = await checkWebFinger(url.origin);
             const webFingerResultElement = createWebFingerResultElement(webFingerResult);
             resultsContainer.appendChild(webFingerResultElement);
